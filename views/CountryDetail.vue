@@ -1,34 +1,37 @@
 <template>
   <div class="country-detail">
-    <div v-if="carregando" class="carregando">
-      Carregando...
+    <!-- Feedback de carregamento -->
+    <div v-if="carregando" class="carregando-container">
+      <div class="spinner"></div>
+      <p>Carregando informações...</p>
     </div>
-    <div v-else-if="country" class="detalhes-completos">
+
+    <div v-else-if="country">
       <h1>{{ country.name.common }}</h1>
       <h2>{{ country.name.official }}</h2>
       <img :src="country.flags.png" :alt="country.name.common" class="bandeira" />
       
       <div class="info-grid">
         <div class="info-col">
-          <p><strong>Capital:</strong> {{ country.capital?.[0] || 'N/A' }}</p>
+          <p><strong>Capital:</strong> {{ formatarArray(country.capital) }}</p>
           <p><strong>Continente:</strong> {{ country.region }}</p>
-          <p><strong>Sub-região:</strong> {{ country.subregion || 'N/A' }}</p>
           <p><strong>População:</strong> {{ country.population.toLocaleString() }}</p>
+          <p><strong>Área:</strong> {{ country.area.toLocaleString() }} km²</p>
         </div>
         
         <div class="info-col">
           <p><strong>Idiomas:</strong> {{ formatarIdiomas }}</p>
           <p><strong>Moeda:</strong> {{ formatarMoedas }}</p>
-          <p><strong>Fuso Horário:</strong> {{ country.timezones?.[0] || 'N/A' }}</p>
-          <p><strong>Código de Chamada:</strong> +{{ country.idd.root }}{{ country.idd.suffixes?.[0] }}</p>
+          <p><strong>Fuso Horário:</strong> {{ formatarArray(country.timezones) }}</p>
         </div>
       </div>
 
-      <button @click="$router.back()" class="botao-voltar">← Voltar para Pesquisa</button>
+      <button @click="$router.back()" class="botao-voltar">← Voltar</button>
     </div>
+
     <div v-else class="nao-encontrado">
-      País não encontrado
-      <button @click="$router.push('/')" class="botao-voltar">← Voltar para Pesquisa</button>
+      <p>País não encontrado</p>
+      <button @click="$router.push('/')" class="botao-voltar">← Voltar à pesquisa</button>
     </div>
   </div>
 </template>
@@ -47,16 +50,26 @@ const formatarIdiomas = computed(() => {
 
 const formatarMoedas = computed(() => {
   if (!country.value.currencies) return 'N/A'
-  return Object.values(country.value.currencies).map(c => `${c.name} (${c.symbol || '?'})`).join(', ')
+  return Object.values(country.value.currencies)
+    .map(c => `${c.name} (${c.symbol || '?'})`)
+    .join(', ')
 })
+
+const formatarArray = (valor) => {
+  return Array.isArray(valor) ? valor.join(', ') : 'N/A'
+}
 
 onMounted(async () => {
   try {
-    const response = await fetch(`https://restcountries.com/v3.1/name/${route.params.name}?fullText=true`)
+    const nomePais = route.params.name
+    const response = await fetch(`https://restcountries.com/v3.1/name/${nomePais}?fullText=true`)
+    
+    if (!response.ok) throw new Error()
+    
     const data = await response.json()
     country.value = data[0]
   } catch (error) {
-    console.error('Erro ao carregar país:', error)
+    country.value = null
   } finally {
     carregando.value = false
   }
@@ -68,9 +81,6 @@ onMounted(async () => {
   max-width: 800px;
   margin: 0 auto;
   padding: 2rem;
-}
-
-.detalhes-completos {
   text-align: center;
 }
 
@@ -128,7 +138,36 @@ h2 {
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-.carregando, .nao-encontrado {
+/* Estilos do loading */
+.carregando-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  gap: 20px;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #42b983;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.carregando-container p {
+  color: #42b983;
+  font-size: 1.2rem;
+}
+
+.nao-encontrado {
   font-size: 1.2rem;
   margin: 3rem 0;
   color: #7f8c8d;

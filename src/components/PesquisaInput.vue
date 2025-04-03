@@ -5,18 +5,38 @@
         type="text"
         v-model="termoPesquisa"
         placeholder="Buscar país..."
-        @focus="mostrarLista = true"
+        @focus="mostrarSugestoes = true"
+        @keydown.enter="selecionarPrimeiroPais"
+        @blur="setTimeout(() => { mostrarSugestoes = false }, 200)"
       />
-      <button @click="toggleDropdown" class="dropdown-button">
-        {{ mostrarLista ? '▲' : '▼' }}
+      <button @click="toggleSugestoes" class="dropdown-button">
+        {{ mostrarSugestoes ? '▲' : '▼' }}
       </button>
     </div>
 
-    <ul v-if="mostrarLista" class="sugestoes-lista">
+    <!-- Dropdown de sugestões -->
+    <ul 
+      v-if="mostrarSugestoes && termoPesquisa" 
+      class="sugestoes-lista"
+    >
       <li
         v-for="pais in paisesFiltrados"
         :key="pais.name.common"
-        @click="selecionarPais(pais)"
+        @mousedown.prevent="selecionarPais(pais)"
+      >
+        {{ pais.name.common }}
+      </li>
+    </ul>
+
+    <!-- Lista fixa de TODOS os países -->
+    <ul 
+      v-show="mostrarListaFixa" 
+      class="sugestoes-lista lista-fixa"
+    >
+      <li
+        v-for="pais in paisesOrdenados"
+        :key="pais.name.common"
+        @mousedown.prevent="selecionarPais(pais)"
       >
         {{ pais.name.common }}
       </li>
@@ -26,41 +46,65 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 
-const emit = defineEmits(['selecionar-pais'])
+const router = useRouter()
+const emit = defineEmits(['iniciou-carregamento', 'terminou-carregamento'])
 const termoPesquisa = ref('')
-const mostrarLista = ref(false)
+const mostrarSugestoes = ref(false)
+const mostrarListaFixa = ref(true)
 const todosPaises = ref([])
 
-// Carrega TODOS os países ordenados
 onMounted(async () => {
-  const response = await fetch('https://restcountries.com/v3.1/all')
-  todosPaises.value = (await response.json()).sort((a, b) => 
-    a.name.common.localeCompare(b.name.common)
-  )
+  try {
+    const response = await fetch('https://restcountries.com/v3.1/all')
+    const data = await response.json()
+    todosPaises.value = data
+      .filter(pais => pais.name)
+      .sort((a, b) => a.name.common.localeCompare(b.name.common))
+  } catch (error) {
+    console.error("Erro ao carregar países:", error)
+  }
 })
 
-const toggleDropdown = () => {
-  mostrarLista.value = !mostrarLista.value
-}
-
-// Mostra lista COMPLETA quando dropdown é aberto
+const paisesOrdenados = computed(() => todosPaises.value)
 const paisesFiltrados = computed(() => {
-  if (!termoPesquisa.value) return todosPaises.value
-  return todosPaises.value.filter(pais =>
+  return paisesOrdenados.value.filter(pais =>
     pais.name.common.toLowerCase().includes(termoPesquisa.value.toLowerCase())
   )
 })
 
-const selecionarPais = (pais) => {
+const toggleSugestoes = () => {
+  mostrarSugestoes.value = !mostrarSugestoes.value
+}
+
+const selecionarPais = async (pais) => {
+  if (!pais?.name) return
+  
+  emit('iniciou-carregamento')
   termoPesquisa.value = pais.name.common
-  mostrarLista.value = false
-  emit('selecionar-pais', pais)
+  mostrarSugestoes.value = false
+  
+  try {
+    await router.push({
+      name: 'country-detail',
+      params: { name: encodeURIComponent(pais.name.common) }
+    })
+  } catch (error) {
+    console.error("Erro na navegação:", error)
+  } finally {
+    emit('terminou-carregamento')
+  }
+}
+
+const selecionarPrimeiroPais = () => {
+  if (paisesFiltrados.value.length > 0) {
+    selecionarPais(paisesFiltrados.value[0])
+  }
 }
 </script>
 
 <style scoped>
-/* SEUS ESTILOS ATUAIS (mantidos exatamente como estão) */
 .pesquisa-container {
   position: relative;
   width: 300px;
@@ -112,5 +156,13 @@ input {
 
 .sugestoes-lista li:hover {
   background-color: #f5f5f5;
+}
+
+.lista-fixa {
+  position: relative;
+  margin-top: 350px;
+  z-index: 1;
+  border-top: 1px solid #eee;
+  padding-top: 15px;
 }
 </style>
