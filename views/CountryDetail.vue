@@ -1,11 +1,31 @@
 <template>
   <div class="country-detail">
-    <!-- Feedback de carregamento -->
+    <!-- Tela de carregamento -->
     <div v-if="carregando" class="carregando-container">
       <div class="spinner"></div>
       <p>Carregando informações...</p>
     </div>
 
+    <!-- Tentativa automática -->
+    <div v-else-if="erro && tentativas < 2" class="tentativa-automatica">
+      <p>Tentando reconectar... ({{ tentativas + 1 }}/2)</p>
+      <div class="spinner small"></div>
+    </div>
+
+    <!-- Erro persistente -->
+    <div v-else-if="erro" class="erro-container">
+      <p class="erro-mensagem">❌ Não foi possível carregar os dados</p>
+      <div class="botoes-erro">
+        <button @click="recarregar" class="botao-recarregar">
+          ↻ Tentar Novamente
+        </button>
+        <button @click="$router.back()" class="botao-voltar">
+          ← Voltar
+        </button>
+      </div>
+    </div>
+
+    <!-- Dados do país -->
     <div v-else-if="country">
       <h1>{{ country.name.common }}</h1>
       <h2>{{ country.name.official }}</h2>
@@ -23,15 +43,17 @@
           <p><strong>Idiomas:</strong> {{ formatarIdiomas }}</p>
           <p><strong>Moeda:</strong> {{ formatarMoedas }}</p>
           <p><strong>Fuso Horário:</strong> {{ formatarArray(country.timezones) }}</p>
+          <p><strong>Código:</strong> {{ country.cca2 }}</p>
         </div>
       </div>
 
       <button @click="$router.back()" class="botao-voltar">← Voltar</button>
     </div>
 
+    <!-- País não encontrado -->
     <div v-else class="nao-encontrado">
-      <p>País não encontrado</p>
-      <button @click="$router.push('/')" class="botao-voltar">← Voltar à pesquisa</button>
+      <p>País não encontrado na base de dados</p>
+      <button @click="$router.back()" class="botao-voltar">← Voltar</button>
     </div>
   </div>
 </template>
@@ -43,13 +65,15 @@ import { useRoute } from 'vue-router'
 const route = useRoute()
 const country = ref(null)
 const carregando = ref(true)
+const erro = ref(false)
+const tentativas = ref(0)
 
 const formatarIdiomas = computed(() => {
-  return country.value.languages ? Object.values(country.value.languages).join(', ') : 'N/A'
+  return country.value?.languages ? Object.values(country.value.languages).join(', ') : 'N/A'
 })
 
 const formatarMoedas = computed(() => {
-  if (!country.value.currencies) return 'N/A'
+  if (!country.value?.currencies) return 'N/A'
   return Object.values(country.value.currencies)
     .map(c => `${c.name} (${c.symbol || '?'})`)
     .join(', ')
@@ -59,20 +83,47 @@ const formatarArray = (valor) => {
   return Array.isArray(valor) ? valor.join(', ') : 'N/A'
 }
 
-onMounted(async () => {
+const fetchCountryData = async () => {
   try {
-    const nomePais = route.params.name
-    const response = await fetch(`https://restcountries.com/v3.1/name/${nomePais}?fullText=true`)
+    erro.value = false
+    carregando.value = true
     
-    if (!response.ok) throw new Error()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+    const response = await fetch(
+      `https://restcountries.com/v3.1/name/${route.params.name}?fullText=true`,
+      { signal: controller.signal }
+    )
+    
+    clearTimeout(timeoutId)
+
+    if (!response.ok) throw new Error('Erro na API')
     
     const data = await response.json()
+    if (data.status === 404) throw new Error('País não encontrado')
+    
     country.value = data[0]
   } catch (error) {
-    country.value = null
+    erro.value = true
+    tentativas.value++
+    
+    // Tentativa automática
+    if (tentativas.value < 2) {
+      setTimeout(fetchCountryData, 3000)
+    }
   } finally {
     carregando.value = false
   }
+}
+
+const recarregar = () => {
+  tentativas.value = 0
+  fetchCountryData()
+}
+
+onMounted(() => {
+  fetchCountryData()
 })
 </script>
 
@@ -138,7 +189,7 @@ h2 {
   box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-/* Estilos do loading */
+/* Estilos para tratamento de erro */
 .carregando-container {
   display: flex;
   flex-direction: column;
@@ -157,19 +208,54 @@ h2 {
   animation: spin 1s linear infinite;
 }
 
+.spinner.small {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+}
+
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-.carregando-container p {
-  color: #42b983;
+.erro-container {
+  margin: 2rem 0;
+  text-align: center;
+}
+
+.erro-mensagem {
+  color: #e74c3c;
   font-size: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+
+.botoes-erro {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.botao-recarregar {
+  padding: 10px 20px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.botao-recarregar:hover {
+  background: #2980b9;
+}
+
+.tentativa-automatica {
+  color: #f39c12;
+  margin-top: 2rem;
 }
 
 .nao-encontrado {
-  font-size: 1.2rem;
-  margin: 3rem 0;
   color: #7f8c8d;
+  margin: 2rem 0;
 }
 </style>

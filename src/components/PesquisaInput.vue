@@ -14,7 +14,6 @@
       </button>
     </div>
 
-    <!-- Dropdown de sugestões -->
     <ul 
       v-if="mostrarSugestoes && termoPesquisa" 
       class="sugestoes-lista"
@@ -28,7 +27,6 @@
       </li>
     </ul>
 
-    <!-- Lista fixa de TODOS os países -->
     <ul 
       v-show="mostrarListaFixa" 
       class="sugestoes-lista lista-fixa"
@@ -49,23 +47,40 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const emit = defineEmits(['iniciou-carregamento', 'terminou-carregamento'])
+const emit = defineEmits(['iniciou-carregamento', 'terminou-carregamento', 'erro-carregamento'])
 const termoPesquisa = ref('')
 const mostrarSugestoes = ref(false)
 const mostrarListaFixa = ref(true)
 const todosPaises = ref([])
 
+// Cache local de países
+const cachePaises = ref({})
+
 onMounted(async () => {
   try {
-    const response = await fetch('https://restcountries.com/v3.1/all')
-    const data = await response.json()
-    todosPaises.value = data
+    const response = await fetchWithTimeout('https://restcountries.com/v3.1/all', 10000)
+    todosPaises.value = response
       .filter(pais => pais.name)
       .sort((a, b) => a.name.common.localeCompare(b.name.common))
   } catch (error) {
     console.error("Erro ao carregar países:", error)
+    emit('erro-carregamento', 'Não foi possível carregar a lista de países')
   }
 })
+
+const fetchWithTimeout = async (url, timeout) => {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeoutId)
+    if (!response.ok) throw new Error()
+    return await response.json()
+  } catch (error) {
+    throw new Error(`Timeout após ${timeout}ms`)
+  }
+}
 
 const paisesOrdenados = computed(() => todosPaises.value)
 const paisesFiltrados = computed(() => {
@@ -86,12 +101,31 @@ const selecionarPais = async (pais) => {
   mostrarSugestoes.value = false
   
   try {
+    // Verifica cache primeiro
+    if (cachePaises.value[pais.name.common]) {
+      await router.push({
+        name: 'country-detail',
+        params: { name: encodeURIComponent(pais.name.common) }
+      })
+      return
+    }
+
+    const data = await fetchWithTimeout(
+      `https://restcountries.com/v3.1/name/${encodeURIComponent(pais.name.common)}?fullText=true`,
+      5000
+    )
+    
+    if (data.status === 404) throw new Error('País não encontrado')
+    
+    // Atualiza cache
+    cachePaises.value[pais.name.common] = data[0]
+    
     await router.push({
       name: 'country-detail',
       params: { name: encodeURIComponent(pais.name.common) }
     })
   } catch (error) {
-    console.error("Erro na navegação:", error)
+    emit('erro-carregamento', error.message || 'Erro ao carregar país')
   } finally {
     emit('terminou-carregamento')
   }
