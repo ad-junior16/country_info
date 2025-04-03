@@ -123,7 +123,12 @@ const recarregar = () => {
 }
 
 onMounted(() => {
-  fetchCountryData()
+  if (route.state?.paisData) { // Dados vindos do cache
+    country.value = route.state.paisData
+    carregando.value = false
+  } else {
+    fetchCountryData() // Fallback original
+  }
 })
 </script>
 
